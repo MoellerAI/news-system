@@ -15,57 +15,104 @@ class BaseJournalist(abc.ABC):
     def __init__(
         self, name: Optional[str] = None, journal_dir: Optional[str] = "app/data"
     ):
-        # Default name to class name if not given
+        """Initializes BaseJournalist.
+
+        Args:
+            name (Optional[str]): The name of the journalist. Defaults to class name.
+            journal_dir (Optional[str]): Default directory to store logs if this journalist
+                                     manages its own file logging independently.
+                                     Not used for file creation in this constructor.
+        """
         self.name: str = name or self.__class__.__name__
-        self.journal_dir: Optional[str] = journal_dir
-        self.logger: logging.Logger = self._setup_logger()
+        self.journal_dir: Optional[str] = (
+            journal_dir  # Store for potential independent use
+        )
 
-    def _setup_logger(self) -> logging.Logger:
-        """Sets up a logger for the journalist.
+        self.logger: logging.Logger = logging.getLogger(self.name)
+        self.logger.setLevel(logging.INFO)  # Default level
 
-        The logger will log to a file in the journal_dir directory.
-        The log file name will be in the format: <journalist_name>_<YYYY-MM-DD>.log.
+        # Add NullHandler if no handlers are configured to prevent "No handlers" warnings.
+        # This allows the logger to be used without output until handlers are added.
+        if not self.logger.hasHandlers():
+            self.logger.addHandler(logging.NullHandler())
+
+        self.logger.propagate = False  # Prevent logs from going to the root logger
+
+    def _setup_logger(
+        self,
+        logger_name: str,  # Should typically be self.name
+        journal_dir: Optional[str],
+        log_filename: Optional[str] = None,
+    ) -> logging.Logger:
+        """Utility to configure a logger instance, typically self.logger.
+
+        This can be called by a journalist instance if it needs to set up its own
+        file logging independently of an orchestrator like NewsRoom.
+
+        Args:
+            logger_name (str): The name for the logger instance.
+            journal_dir (Optional[str]): Directory to store log files.
+            log_filename (Optional[str]): Specific filename for the log file. If None,
+                                     a default name (<logger_name>_<YYYY-MM-DD>.log) is used.
 
         Returns:
             logging.Logger: The configured logger instance.
         """
-        logger: logging.Logger = logging.getLogger(self.name)
-        logger.setLevel(logging.INFO)
+        # Get the logger instance (could be self.logger or another)
+        logger_to_configure: logging.Logger = logging.getLogger(logger_name)
+        logger_to_configure.setLevel(logging.INFO)  # Ensure level is set
 
-        # Create formatter
+        # Clear any existing handlers to prevent duplicate logging or incorrect file output
+        if logger_to_configure.hasHandlers():
+            for handler in logger_to_configure.handlers[:]:  # Iterate over a copy
+                handler.close()
+                logger_to_configure.removeHandler(handler)
+
         formatter: logging.Formatter = logging.Formatter(
             "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
         )
 
-        # Create file handler if journal_dir is specified
-        if self.journal_dir:
-            # Ensure the journal directory exists
-            if not os.path.exists(self.journal_dir):
-                os.makedirs(self.journal_dir)
+        if journal_dir:
+            if not os.path.exists(journal_dir):
+                os.makedirs(journal_dir)
 
-            log_file_name: str = (
-                f"{self.name}_{datetime.now().strftime('%Y-%m-%d')}.log"
-            )
-            file_handler: logging.FileHandler = logging.FileHandler(
-                os.path.join(self.journal_dir, log_file_name)
-            )
+            final_log_filename: str
+            if log_filename:
+                final_log_filename = log_filename
+            else:
+                final_log_filename = (
+                    f"{logger_name}_{datetime.now().strftime('%Y-%m-%d')}.log"
+                )
+
+            file_path: str = os.path.join(journal_dir, final_log_filename)
+            file_handler: logging.FileHandler = logging.FileHandler(file_path)
             file_handler.setFormatter(formatter)
-            logger.addHandler(file_handler)
+            logger_to_configure.addHandler(file_handler)
         else:
-            # If no journal_dir is specified, log to console
-            console_handler: logging.StreamHandler = logging.StreamHandler()
-            console_handler.setFormatter(formatter)
-            logger.addHandler(console_handler)
+            # Fallback to console logging if no journal_dir, or add NullHandler
+            # For this utility, let's add a console handler if no journal_dir.
+            # If called from __init__ (which it isn't anymore for file setup),
+            # NullHandler is preferred.
+            if (
+                not logger_to_configure.hasHandlers()
+            ):  # Add console if still no handlers
+                console_handler: logging.StreamHandler = logging.StreamHandler()
+                console_handler.setFormatter(formatter)
+                logger_to_configure.addHandler(console_handler)
 
-        return logger
+        logger_to_configure.propagate = False
+        return logger_to_configure
 
     @abc.abstractmethod
-    def _run(self, *args: Any, **kwargs: Any) -> Any:
+    def _run(self, logger_to_use: logging.Logger, *args: Any, **kwargs: Any) -> Any:
         """
         Abstract method that subclasses must implement to define their specific behavior.
         This method is called by the run() method.
 
         Args:
+            logger_to_use (logging.Logger): The logger instance to be used for logging.
+                                          This is typically self.logger, which might be
+                                          reconfigured by an orchestrator.
             *args: Variable length argument list.
             **kwargs: Arbitrary keyword arguments.
 
@@ -82,6 +129,8 @@ class BaseJournalist(abc.ABC):
         Runs the journalist's task.
 
         Logs an informational message before and after calling the _run method.
+        It uses self.logger. The handlers for self.logger might be dynamically
+        managed by an orchestrator (like NewsRoom) to direct logs to specific files.
 
         Args:
             *args: Variable length argument list to be passed to _run.
@@ -90,7 +139,11 @@ class BaseJournalist(abc.ABC):
         Returns:
             Any: The result of the _run method.
         """
+        # self.logger is the journalist's own named logger.
+        # Its handlers determine where the log output goes.
         self.logger.info(f"Starting execution for {self.name}.")
-        result: Any = self._run(*args, **kwargs)
+        result: Any = self._run(
+            self.logger, *args, **kwargs
+        )  # Pass self.logger to _run
         self.logger.info(f"Finished execution for {self.name}.")
         return result

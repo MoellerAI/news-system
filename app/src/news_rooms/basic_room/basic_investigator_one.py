@@ -1,3 +1,4 @@
+import logging
 from datetime import datetime
 
 from app.src.roles.investigator import BaseInvestigator
@@ -10,7 +11,9 @@ class BasicInvestigatorOne(BaseInvestigator):
     This investigator simply marks the task as done and adds a dummy result.
     """
 
-    def __init__(self, name: str = "BasicInvestigatorOne", journal_dir: str | None = "app/data"):
+    def __init__(
+        self, name: str = "BasicInvestigatorOne", journal_dir: str | None = "app/data"
+    ):
         """Initializes BasicInvestigatorOne.
 
         Args:
@@ -19,7 +22,9 @@ class BasicInvestigatorOne(BaseInvestigator):
         """
         super().__init__(name=name, journal_dir=journal_dir)
 
-    def investigate(self, task: InvestigationTask) -> InvestigationTask:
+    def investigate(
+        self, logger_to_use: logging.Logger, task: InvestigationTask
+    ) -> InvestigationTask:
         """
         Processes the given investigation task.
 
@@ -27,17 +32,20 @@ class BasicInvestigatorOne(BaseInvestigator):
         and adds a simple string as a result.
 
         Args:
+            logger_to_use (logging.Logger): The logger to use for this investigation.
             task (InvestigationTask): The investigation task to be processed.
 
         Returns:
             InvestigationTask: The processed task with status updated and a dummy result.
         """
-        self.logger.info(f"Investigator {self.name} processing task: {task.task_id} - {task.description}")
-        
+        logger_to_use.info(
+            f"Investigator {self.name} processing task: {task.task_id} - {task.description}"
+        )
+
         # Simulate investigation work
         task.result = f"Dummy result for task {task.task_id} from {self.name}"
         task.status = "done"
         task.completed_at = datetime.now()
-        
-        self.logger.info(f"Investigator {self.name} completed task: {task.task_id}")
+
+        logger_to_use.info(f"Investigator {self.name} completed task: {task.task_id}")
         return task
