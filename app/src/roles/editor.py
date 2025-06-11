@@ -1,7 +1,7 @@
 import abc
 import logging
 from datetime import datetime
-from typing import Any, List, Optional  # Added Optional
+from typing import Any, List, Optional
 
 from app.src.roles.investigator import BaseInvestigator
 from app.src.roles.journalist import BaseJournalist
@@ -41,19 +41,20 @@ class BaseEditor(BaseJournalist):
     def solve_task(
         self, task: InvestigationTask, investigator: BaseInvestigator
     ) -> InvestigationTask:
-        # The investigator will use its own logger, which should be configured by the NewsRoom
+        # The investigator will use its own self.logger, which has its handlers
+        # managed by NewsRoom for the duration of the lead processing.
         solved_task: InvestigationTask = investigator.run(task=task)
         return solved_task
 
     def _run(
-        self, logger_to_use: logging.Logger, *args: Any, **kwargs: Any
-    ) -> List[InvestigationTask]:
+        self, *args: Any, **kwargs: Any
+    ) -> List[InvestigationTask]:  # Removed logger_to_use
         """
         Template method for running the editor's workflow with logging.
+        Uses self.logger, whose handlers are managed by NewsRoom.
 
         Args:
-            logger_to_use (logging.Logger): The logger to use for this run.
-            *args: Variable length argument list. Expected to contain 'lead' in kwargs.
+            *args: Variable length argument list.
             **kwargs: Arbitrary keyword arguments. Expected to contain 'lead'.
 
         Returns:
@@ -64,12 +65,13 @@ class BaseEditor(BaseJournalist):
         """
         lead: Optional[Lead] = kwargs.get("lead")
         if not lead or not isinstance(lead, Lead):
-            logger_to_use.error(
+            # Use self.logger here
+            self.logger.error(
                 "'lead' argument of type Lead must be provided in kwargs to BaseEditor._run"
             )
             raise ValueError("'lead' argument of type Lead must be provided in kwargs")
 
-        logger_to_use.info(
+        self.logger.info(  # Use self.logger
             f"[Editor] Starting lead {lead.lead_id} at {datetime.now().isoformat()}"
         )
         tasks: List[InvestigationTask] = self.generate_plan(lead)
@@ -77,12 +79,11 @@ class BaseEditor(BaseJournalist):
         solved_tasks: List[InvestigationTask] = []
         for task_item in tasks:
             investigator: BaseInvestigator = self.get_investigator_for_task(task_item)
-            solved_task: InvestigationTask = investigator.run(
-                task=task_item
-            )  # Pass task as keyword argument
+            # investigator.run will use its own self.logger
+            solved_task: InvestigationTask = self.solve_task(task_item, investigator)
             solved_tasks.append(solved_task)
 
-        logger_to_use.info(
+        self.logger.info(  # Use self.logger
             f"[Editor] Completed lead {lead.lead_id} with {len(solved_tasks)} tasks"
         )
         return solved_tasks

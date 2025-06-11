@@ -104,15 +104,12 @@ class BaseJournalist(abc.ABC):
         return logger_to_configure
 
     @abc.abstractmethod
-    def _run(self, logger_to_use: logging.Logger, *args: Any, **kwargs: Any) -> Any:
+    def _run(self, *args: Any, **kwargs: Any) -> Any:
         """
         Abstract method that subclasses must implement to define their specific behavior.
         This method is called by the run() method.
 
         Args:
-            logger_to_use (logging.Logger): The logger instance to be used for logging.
-                                          This is typically self.logger, which might be
-                                          reconfigured by an orchestrator.
             *args: Variable length argument list.
             **kwargs: Arbitrary keyword arguments.
 
@@ -139,11 +136,7 @@ class BaseJournalist(abc.ABC):
         Returns:
             Any: The result of the _run method.
         """
-        # self.logger is the journalist's own named logger.
-        # Its handlers determine where the log output goes.
         self.logger.info(f"Starting execution for {self.name}.")
-        result: Any = self._run(
-            self.logger, *args, **kwargs
-        )  # Pass self.logger to _run
+        result: Any = self._run(*args, **kwargs)  # Removed logger passing
         self.logger.info(f"Finished execution for {self.name}.")
         return result

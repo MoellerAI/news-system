@@ -22,23 +22,21 @@ class BasicInvestigatorTwo(BaseInvestigator):
         """
         super().__init__(name=name, journal_dir=journal_dir)
 
-    def investigate(
-        self, logger_to_use: logging.Logger, task: InvestigationTask
-    ) -> InvestigationTask:
+    def investigate(self, task: InvestigationTask) -> InvestigationTask:
         """
         Processes the given investigation task.
+        Uses self.logger for logging.
 
         This dummy implementation logs the task, marks it as 'done',
         and adds a unique simple string as a result.
 
         Args:
-            logger_to_use (logging.Logger): The logger to use for this investigation.
             task (InvestigationTask): The investigation task to be processed.
 
         Returns:
             InvestigationTask: The processed task with status updated and a dummy result.
         """
-        logger_to_use.info(
+        self.logger.info(
             f"Investigator {self.name} processing task: {task.task_id} - {task.description}"
         )
 
@@ -49,5 +47,5 @@ class BasicInvestigatorTwo(BaseInvestigator):
         task.status = "done"
         task.completed_at = datetime.now()
 
-        logger_to_use.info(f"Investigator {self.name} completed task: {task.task_id}")
+        self.logger.info(f"Investigator {self.name} completed task: {task.task_id}")
         return task
