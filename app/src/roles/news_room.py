@@ -1,12 +1,13 @@
 import logging
 import os
 from datetime import datetime
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional  # Added Any
 
 from app.src.roles.editor import BaseEditor
 from app.src.roles.investigator import BaseInvestigator
 from app.src.roles.journalist import BaseJournalist
 from app.src.schemas.base import InvestigationTask, Lead
+from app.src.utils.logging_utils import redirect_loggers_to_handler  # Added import
 
 
 class NewsRoom:
@@ -59,6 +60,12 @@ class NewsRoom:
         All logs for this specific lead (from NewsRoom, Editor, Investigators)
         will be directed to a single file: <journal_dir>/<lead_id>.log.
         The logger name in the log entries will reflect the actual source component.
+
+        Args:
+            lead (Lead): The lead to be investigated.
+
+        Returns:
+            List[InvestigationTask]: A list of tasks that have been processed.
         """
 
         lead_file_handler: Optional[logging.FileHandler] = None
@@ -80,69 +87,46 @@ class NewsRoom:
                 f"No journal_dir configured for NewsRoom {self.name}. "
                 f"Logs for lead {lead.lead_id} will not be saved to a dedicated file."
             )
-            # Logs will go to wherever the components' loggers are currently configured
-            # (e.g., NullHandler or console if that's their default).
+            # If no journal_dir, proceed without file logging for this lead.
+            # Components will use their NullHandlers or other pre-configured handlers.
+            log_content_no_file: str = (
+                lead.content[:50] + "..." if len(lead.content) > 50 else lead.content
+            )
+            self.logger.info(
+                f"News Room {self.name} received lead: {lead.lead_id} - {log_content_no_file}"
+            )
+            solved_tasks_no_file: List[InvestigationTask] = self.editor.run(lead=lead)
+            self.logger.info(
+                f"News Room {self.name} finished processing lead: {lead.lead_id}. "
+                f"Solved tasks: {len(solved_tasks_no_file)}"
+            )
+            return solved_tasks_no_file
 
-        # Loggers whose output should go to the lead_id.log for this run
-        # This includes the NewsRoom's own logger (self.logger), the editor, and all investigators.
+        # At this point, lead_file_handler is guaranteed to be a FileHandler
+        # because the else block above returns.
+
         journalists_involved: List[BaseJournalist] = [self.editor] + self.investigators
-        # self.logger is now logging.getLogger(self.name), e.g., "BasicNewsRoom"
         all_loggers_for_lead: List[logging.Logger] = [self.logger]
         all_loggers_for_lead.extend([j.logger for j in journalists_involved])
 
-        original_handlers_map: Dict[logging.Logger, List[logging.Handler]] = {}
-        original_propagate_map: Dict[logging.Logger, bool] = {}
-
-        if lead_file_handler:
-            for logger_instance in all_loggers_for_lead:
-                original_handlers_map[logger_instance] = logger_instance.handlers[:]
-                original_propagate_map[logger_instance] = logger_instance.propagate
-
-                # Remove all existing handlers
-                for h in logger_instance.handlers[:]:
-                    # Do not close NullHandlers or system handlers if they are not file handlers
-                    # However, for this specific redirection, we clear all to ensure exclusive output.
-                    if isinstance(
-                        h, logging.FileHandler
-                    ):  # Close file handlers before removing
-                        h.close()
-                    logger_instance.removeHandler(h)
-
-                logger_instance.addHandler(lead_file_handler)
-                logger_instance.propagate = False
-
         try:
-            log_content: str = (
-                lead.content[:50] + "..." if len(lead.content) > 50 else lead.content
-            )
-            # This log message will use self.logger (e.g., logger named "BasicNewsRoom")
-            # which now has lead_file_handler attached.
-            self.logger.info(
-                f"News Room {self.name} received lead: {lead.lead_id} - {log_content}"
-            )
+            with redirect_loggers_to_handler(all_loggers_for_lead, lead_file_handler):
+                log_content: str = (
+                    lead.content[:50] + "..."
+                    if len(lead.content) > 50
+                    else lead.content
+                )
+                self.logger.info(
+                    f"News Room {self.name} received lead: {lead.lead_id} - {log_content}"
+                )
 
-            # The editor.run() will use editor.logger, which also has lead_file_handler.
-            # Inside editor.run(), it calls investigator.run(), which uses investigator.logger,
-            # also now equipped with lead_file_handler.
-            solved_tasks: List[InvestigationTask] = self.editor.run(lead=lead)
+                solved_tasks: List[InvestigationTask] = self.editor.run(lead=lead)
 
-            self.logger.info(
-                f"News Room {self.name} finished processing lead: {lead.lead_id}. "
-                f"Solved tasks: {len(solved_tasks)}"
-            )
-            return solved_tasks
+                self.logger.info(
+                    f"News Room {self.name} finished processing lead: {lead.lead_id}. "
+                    f"Solved tasks: {len(solved_tasks)}"
+                )
+                return solved_tasks
         finally:
             if lead_file_handler:
-                for logger_instance in all_loggers_for_lead:
-                    logger_instance.removeHandler(lead_file_handler)
-                    # Restore original handlers
-                    for original_handler in original_handlers_map.get(
-                        logger_instance, []
-                    ):
-                        logger_instance.addHandler(original_handler)
-                    # Restore original propagate status
-                    logger_instance.propagate = original_propagate_map.get(
-                        logger_instance, False
-                    )
-
                 lead_file_handler.close()
